@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package vn.xime.application.external.application;
+
+import "google/protobuf/empty.proto";
+
+option java_package = "vn.xime.application.grpc.external.application";
+option java_multiple_files = true;
+
+// ==================================================
+// APPLICATION ADMIN SERVICE (EXTERNAL)
+// ==================================================
+//
+// Admin API: đăng ký và quản lý vòng đời application.
+// Chỉ phơi bày qua gRPC + mTLS (không public REST).
+//
+service ApplicationAdminService {
+
+  rpc RegisterApplication   (RegisterApplicationRequest) returns (RegisterApplicationResponse);
+  rpc ActivateApplication   (ApplicationIdRequest)       returns (google.protobuf.Empty);
+  rpc SuspendApplication    (ApplicationIdRequest)       returns (google.protobuf.Empty);
+  rpc ReactivateApplication (ApplicationIdRequest)       returns (google.protobuf.Empty);
+  rpc DisableApplication    (ApplicationIdRequest)       returns (google.protobuf.Empty);
+  rpc RetireApplication     (ApplicationIdRequest)       returns (google.protobuf.Empty);
+  rpc GetApplication        (ApplicationIdRequest)       returns (ApplicationResponse);
+  rpc ListApplications      (ListApplicationsRequest)    returns (ListApplicationsResponse);
+}
+
+message RegisterApplicationRequest {
+  string application_code = 1;  // Base62 slug chữ thường, vd "xime-social"
+  string name             = 2;
+  string description      = 3;  // optional
+}
+
+message RegisterApplicationResponse {
+  bytes  identity_id      = 1;  // 24 byte KSUID
+  string application_code = 2;
+}
+
+message ApplicationIdRequest {
+  bytes identity_id = 1;
+}
+
+message ApplicationResponse {
+  bytes  identity_id      = 1;
+  string application_code = 2;
+  string name             = 3;
+  string description      = 4;
+  string status           = 5;
+  int64  state_version    = 6;
+  int64  change_sequence  = 7;
+  repeated string permissions = 8;
+  int64  created_at       = 9;   // epoch millis
+  int64  updated_at       = 10;  // epoch millis
+}
+
+message ListApplicationsRequest {
+  string status_filter = 1;  // optional
+  int32  page          = 2;
+  int32  size          = 3;
+}
+
+message ListApplicationsResponse {
+  repeated ApplicationResponse applications = 1;
+  int64 total = 2;
+}

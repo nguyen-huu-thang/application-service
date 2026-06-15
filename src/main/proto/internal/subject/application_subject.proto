@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package vn.xime.application.internal.subject;
+
+option java_package = "vn.xime.application.grpc.internal.subject";
+option java_multiple_files = true;
+
+// ==================================================
+// APPLICATION SUBJECT SERVICE (INTERNAL)
+// ==================================================
+//
+// Sync API cho resource service (data, ...) qua gRPC + mTLS.
+// - GetSubjectInfo: lookup trực tiếp theo identity_id khi miss cache.
+// - PollChangedApplications: pull các app thay đổi kể từ sequence cursor.
+//
+service ApplicationSubjectService {
+
+  rpc GetSubjectInfo          (GetSubjectInfoRequest) returns (SubjectInfoResponse);
+  rpc PollChangedApplications (PollChangedRequest)    returns (PollChangedResponse);
+}
+
+message GetSubjectInfoRequest {
+  bytes identity_id = 1;
+}
+
+message SubjectInfoResponse {
+  bytes  identity_id      = 1;
+  string subject_type     = 2;  // luôn "APPLICATION"
+  string status           = 3;
+  int64  state_version    = 4;
+  int64  change_sequence  = 5;
+  repeated string permissions = 6;
+  string tenant_id        = 7;  // nullable (rỗng nếu chưa có)
+}
+
+message PollChangedRequest {
+  int64 after_sequence = 1;   // 0 = kéo tất cả
+  int32 limit          = 2;   // max 200
+}
+
+message PollChangedResponse {
+  repeated SubjectInfoResponse applications = 1;
+  int64 max_sequence = 2;     // sequence lớn nhất trong response, dùng làm cursor tiếp theo
+  bool  has_more     = 3;
+}

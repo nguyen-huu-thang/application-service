@@ -1,0 +1,99 @@
+application_service - Database Schema
+====================================
+
+Database: application_service
+Convention: identity_id = KSUID 24 byte (BYTEA), shard_id = "0000" (1 shard)
+
+
+=== BẢNG NGHIỆP VỤ ===
+
+applications
+------------
+identity_id       BYTEA(24)     PK  -- KSUID 24 byte, cấp khi đăng ký
+application_code  VARCHAR(64)   NOT NULL UNIQUE  -- Base62 chữ thường, vd "xime-social"
+name              VARCHAR(255)  NOT NULL
+description       TEXT
+status            VARCHAR(32)   NOT NULL  -- PENDING_REVIEW | ACTIVE | SUSPENDED | DISABLED | RETIRED
+state_version     BIGINT        NOT NULL DEFAULT 0   -- tăng mỗi khi status/permission thay đổi
+change_sequence   BIGSERIAL     NOT NULL UNIQUE      -- monotonic global cursor cho pull sync
+tenant_id         VARCHAR(64)                        -- NULL hiện tại
+created_at        TIMESTAMPTZ   NOT NULL
+updated_at        TIMESTAMPTZ   NOT NULL
+
+Index: idx_applications_status (status)
+
+Ghi chú: shard_id và service_id của bản thân application-service đến từ cert (Trust)
+và file config - không lưu DB. Chỉ lưu DB khi service quản lí shard/service của đối tượng khác.
+
+
+app_system_permissions
+----------------------
+id                BIGSERIAL     PK
+app_identity_id   BYTEA(24)     NOT NULL  FK -> applications.identity_id ON DELETE CASCADE
+permission        VARCHAR(128)  NOT NULL  -- PermissionCode: DATA_CREATE_OBJECT, DATA_READ_OBJECT...
+created_at        TIMESTAMPTZ   NOT NULL
+UNIQUE (app_identity_id, permission)
+
+Index: idx_perm_app_id (app_identity_id)
+
+
+=== BẢNG INFRASTRUCTURE ===
+
+outbox_events  (Transactional Outbox - đảm bảo không mất Kafka event)
+-------------
+id              BIGSERIAL    PK
+topic           VARCHAR(128) NOT NULL   -- vd "application.subject.changed"
+payload         JSONB        NOT NULL
+created_at      TIMESTAMPTZ  NOT NULL
+published       BOOLEAN      NOT NULL DEFAULT FALSE
+published_at    TIMESTAMPTZ
+
+Index: idx_outbox_unpublished (published, created_at) WHERE published = FALSE
+
+
+=== BẢNG TRUST INTEGRATION (copy từ user-service) ===
+
+certificates  (cert mTLS của application-service, do Trust cấp)
+------------
+certificate_id    VARCHAR(100)  PK
+service_id        VARCHAR(100)  NOT NULL   -- "application-service"
+public_certificate TEXT         NOT NULL   -- PEM encoded cert
+private_key       TEXT                     -- PEM encoded private key (encrypted)
+refresh_token_id  VARCHAR(100)  NOT NULL
+refresh_token     TEXT                     -- token dùng để rotate cert (encrypted/hashed)
+issued_at         TIMESTAMPTZ   NOT NULL
+expires_at        TIMESTAMPTZ   NOT NULL
+
+Index: idx_certificates_service_id (service_id)
+       idx_certificates_expires_at (expires_at)
+       idx_certificates_issued_at  (issued_at)
+
+
+key_contexts  (public key của Trust service, dùng để verify JWT admin)
+------------
+key_id        VARCHAR(100)  PK
+key_type      VARCHAR(50)   NOT NULL   -- vd "JWT_SIGNING"
+key_spec      VARCHAR(100)  NOT NULL   -- vd "EC_P256", "RSA_2048"
+verifier_id   VARCHAR(100)  NOT NULL   -- service dùng key này để verify
+public_key    TEXT          NOT NULL   -- PEM encoded public key
+activate_at   TIMESTAMPTZ   NOT NULL
+expires_at    TIMESTAMPTZ   NOT NULL
+
+Index: idx_key_contexts_key_id      (key_id)
+       idx_key_contexts_activate_at (activate_at)
+       idx_key_contexts_expires_at  (expires_at)
+       idx_key_contexts_key_type    (key_type)
+       idx_key_contexts_verifier_id (verifier_id)
+
+
+=== GHI CHÚ SCHEMA ===
+
+Giai đoạn phát triển: dùng JPA ddl-auto: update (không cần file migration).
+Flyway thêm vào sau khi schema ổn định, trước khi chạy thật.
+
+Thứ tự migration dự kiến (tham khảo):
+  V1 - applications
+  V2 - app_system_permissions
+  V3 - outbox_events
+  V4 - certificates
+  V5 - key_contexts

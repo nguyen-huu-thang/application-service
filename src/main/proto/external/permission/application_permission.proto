@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package vn.xime.application.external.permission;
+
+import "google/protobuf/empty.proto";
+
+option java_package = "vn.xime.application.grpc.external.permission";
+option java_multiple_files = true;
+
+// ==================================================
+// APPLICATION PERMISSION SERVICE (EXTERNAL)
+// ==================================================
+//
+// Admin API: cấp / thu hồi System Permission cho application.
+// Chỉ phơi bày qua gRPC + mTLS.
+//
+service ApplicationPermissionService {
+
+  rpc GrantSystemPermission  (PermissionRequest) returns (google.protobuf.Empty);
+  rpc RevokeSystemPermission (PermissionRequest) returns (google.protobuf.Empty);
+}
+
+message PermissionRequest {
+  bytes  app_identity_id = 1;
+  string permission      = 2;  // PermissionCode, vd "DATA_READ_OBJECT"
+}

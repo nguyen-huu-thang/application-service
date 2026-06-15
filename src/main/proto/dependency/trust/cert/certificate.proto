@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package trust.external.cert;
+
+option java_package = "vn.xime.trust.grpc.external.certificate";
+option java_multiple_files = true;
+
+// ==================================================
+// CERTIFICATE SERVICE (mTLS RUNTIME) - Trust Service external API
+// ==================================================
+//
+// Client dependency proto: application-service gọi Trust để rotate cert.
+// Java package giữ nguyên vn.xime.trust.grpc.external.certificate để khớp
+// stub sinh ra (giống cách user-service tham chiếu).
+//
+service CertificateService {
+
+  rpc RotateCertificate (RotateCertificateRequest) returns (RotateCertificateResponse);
+}
+
+message RotateCertificateRequest {
+  string token_id      = 1;
+  string refresh_token = 2;
+  string private_key   = 3;
+}
+
+message RotateCertificateResponse {
+  CertificateDto certificate        = 1;
+  string         service_id         = 2;
+  string         next_refresh_token = 3;  // token mới (chain rotation)
+  string         refresh_token_id   = 4;
+  int64          issued_at          = 5;
+  int64          expires_at         = 6;
+}
+
+message CertificateDto {
+  string id          = 1;
+  string public_cert = 2;  // PEM
+  string private_key = 3;
+}
