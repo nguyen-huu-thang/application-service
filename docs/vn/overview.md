@@ -1,98 +1,98 @@
-# Application Service - Tong quan
+# Application Service - Tổng quan
 
 [English](../en/overview.md)
 
-## Vai tro
+## Vai trò
 
-Application Service la **Application Identity Domain Service** cua Xime Base Platform. Nhiem vu duy nhat cua no la lam nguon truth cho moi thu lien quan den Subject loai APPLICATION:
+Application Service là **Application Identity Domain Service** của Xime Base Platform. Nhiệm vụ duy nhất của nó là làm nguồn truth cho mọi thứ liên quan đến Subject loại APPLICATION:
 
-- Dang ky ung dung va cap `identity_id` vinh vien
-- Luu tru metadata (`application_code`, ten, mo ta)
-- Quan ly vong doi ung dung (state machine)
-- Cap va thu hoi System Permission cho APPLICATION subject
-- Thong bao cho resource service khi trang thai hoac quyen cua ung dung thay doi
+- Đăng ký ứng dụng và cấp `identity_id` vĩnh viễn
+- Lưu trữ metadata (`application_code`, tên, mô tả)
+- Quản lý vòng đời ứng dụng (state machine)
+- Cấp và thu hồi System Permission cho APPLICATION subject
+- Thông báo cho resource service khi trạng thái hoặc quyền của ứng dụng thay đổi
 
-Service nay khong co vai tro trong xac thuc, quan ly session hay logic nghiep vu cua bat ky ung dung nao.
+Service này không có vai trò trong xác thực, quản lý session hay logic nghiệp vụ của bất kỳ ứng dụng nào.
 
 ---
 
-## Vi tri trong Base Platform
+## Vị trí trong Base Platform
 
 ```
 Trust Service        <- CA, cert mTLS, JWT signing key
-Identity Service     <- Authentication gateway, cap JWT cho HUMAN/BOT/AI_AGENT
+Identity Service     <- Authentication gateway, cấp JWT cho HUMAN/BOT/AI_AGENT
 User Service         <- Registry HUMAN subject
 Agent Service        <- Registry BOT, AI_AGENT subject
-Application Service  <- Registry APPLICATION subject  (service nay)
-Data Service         <- Data infrastructure, kiem tra quyen subject
-Notification Service <- Gui thong bao
-Payment Service      <- Thanh toan
+Application Service  <- Registry APPLICATION subject  (service này)
+Data Service         <- Data infrastructure, kiểm tra quyền subject
+Notification Service <- Gửi thông báo
+Payment Service      <- Thanh toán
 ```
 
-Application Service la doi tac cua User Service va Agent Service. User Service quan ly HUMAN subject, Agent Service quan ly BOT/AI_AGENT, con Application Service quan ly APPLICATION subject.
+Application Service là đối tác của User Service và Agent Service. User Service quản lý HUMAN subject, Agent Service quản lý BOT/AI_AGENT, còn Application Service quản lý APPLICATION subject.
 
 ---
 
-## Ranh gioi
+## Ranh giới
 
-| Application Service LAM | Application Service KHONG LAM |
+| Application Service LÀM | Application Service KHÔNG LÀM |
 |---|---|
-| Dang ky app, cap `identity_id` 24 byte | Cap hoac xac minh JWT token |
-| Luu metadata: code, ten, mo ta | Giu credential cho app |
-| Quan ly vong doi (state machine + `state_version`) | Luu binding service-to-app (Trust quan ly qua cert SAN) |
-| Cap va thu hoi System Permission | Tham gia luong dang nhap Identity |
-| Publish sync event cho resource service | Chua logic nghiep vu cua ung dung cu the |
-| Expose Pull API de reconcile du phong | Tro thanh runtime dependency cua service khac |
+| Đăng ký app, cấp `identity_id` 24 byte | Cấp hoặc xác minh JWT token |
+| Lưu metadata: code, tên, mô tả | Giữ credential cho app |
+| Quản lý vòng đời (state machine + `state_version`) | Lưu binding service-to-app (Trust quản lý qua cert SAN) |
+| Cấp và thu hồi System Permission | Tham gia luồng đăng nhập Identity |
+| Publish sync event cho resource service | Chứa logic nghiệp vụ của ứng dụng cụ thể |
+| Expose Pull API để reconcile dự phòng | Trở thành runtime dependency của service khác |
 
 ---
 
-## Tai sao APPLICATION khong dung JWT
+## Tại sao APPLICATION không dùng JWT
 
-Moi loi goi nhan danh APPLICATION deu phat sinh tu tien trinh service chay ben trong mTLS mesh. Cert mTLS luon co san va la bang chung so huu (manh hon bearer token). Trust Service nhung `owner_app_identity_id` vao SAN cua cert, nen khong can bootstrap API hay hardcode config.
+Mọi lời gọi nhân danh APPLICATION đều phát sinh từ tiến trình service chạy bên trong mTLS mesh. Cert mTLS luôn có sẵn và là bằng chứng sở hữu (mạnh hơn bearer token). Trust Service nhúng `owner_app_identity_id` vào SAN của cert, nên không cần bootstrap API hay hardcode config.
 
-Neu dung JWT se khien APPLICATION subject phu thuoc vao Identity Service luc runtime - mot coupling khong duoc thiet ke san.
+Nếu dùng JWT sẽ khiến APPLICATION subject phụ thuộc vào Identity Service lúc runtime - một coupling không được thiết kế sẵn.
 
-Chi tiet: [Dinh danh ung dung](application-identity.md).
+Chi tiết: [Định danh ứng dụng](application-identity.md).
 
 ---
 
-## Cac loai Subject tren platform
+## Các loại Subject trên platform
 
 ```
-SubjectType     Owner Service          Co che xac thuc       JWT?
-HUMAN        -> user-service           credential + Identity  co
-BOT          -> agent-service          API key + Identity     co
-AI_AGENT     -> agent-service          API key + Identity     co
-APPLICATION  -> application-service    cert (Trust) + sync    khong
-(SERVICE     -> trust-service          cert mTLS              khong bao gio la subject)
+SubjectType     Owner Service          Cơ chế xác thực       JWT?
+HUMAN        -> user-service           credential + Identity  có
+BOT          -> agent-service          API key + Identity     có
+AI_AGENT     -> agent-service          API key + Identity     có
+APPLICATION  -> application-service    cert (Trust) + sync    không
+(SERVICE     -> trust-service          cert mTLS              không bao giờ là subject)
 ```
 
-SERVICE khong bao gio la Subject va khong bao gio xuat hien voi tu cach so huu du lieu hay giu quyen.
+SERVICE không bao giờ là Subject và không bao giờ xuất hiện với tư cách sở hữu dữ liệu hay giữ quyền.
 
 ---
 
-## Cong va co so du lieu
+## Cổng và cơ sở dữ liệu
 
-| Thong tin | Gia tri |
+| Thông tin | Giá trị |
 |---|---|
 | HTTP port | 8085 |
 | gRPC port | 9094 |
 | Database | `application_service` |
-| Package goc | `vn.xime.application` |
+| Package gốc | `vn.xime.application` |
 | Main class | `ApplicationServiceApplication` |
 
 ---
 
-## Quan he voi Trust Service
+## Quan hệ với Trust Service
 
-Application Service chinh no la mot Base Platform service binh thuong: no bootstrap cert mTLS tu Trust Service (cert cua no KHONG mang `owner_app_identity_id`).
+Application Service chính nó là một Base Platform service bình thường: nó bootstrap cert mTLS từ Trust Service (cert của nó KHÔNG mang `owner_app_identity_id`).
 
-Khai niem `owner_app_identity_id` chi ap dung cho cac tien trinh service thuoc Application Layer. Bang `services` cua Trust co cot nullable `owner_app_identity_id BYTEA(24)`. Application Service la nguon tu cuong cung cap gia tri cua cot nay.
+Khái niệm `owner_app_identity_id` chỉ áp dụng cho các tiến trình service thuộc Application Layer. Bảng `services` của Trust có cột nullable `owner_app_identity_id BYTEA(24)`. Application Service là nguồn tự cường cung cấp giá trị của cột này.
 
 ---
 
-## Quan he voi Resource Service
+## Quan hệ với Resource Service
 
-Resource service (data-service va cac service tuong lai) cache thong tin subject va System Permission cua APPLICATION subject. Application Service day cap nhat qua Kafka va expose Pull API de reconcile. Resource service co the hoat dong trong thoi gian dai ma khong can lien he Application Service - chi can du lieu tuoi de kiem tra quyen.
+Resource service (data-service và các service tương lai) cache thông tin subject và System Permission của APPLICATION subject. Application Service đẩy cập nhật qua Kafka và expose Pull API để reconcile. Resource service có thể hoạt động trong thời gian dài mà không cần liên hệ Application Service - chỉ cần dữ liệu tươi để kiểm tra quyền.
 
-Chi tiet: [Co che dong bo](sync.md).
+Chi tiết: [Cơ chế đồng bộ](sync.md).

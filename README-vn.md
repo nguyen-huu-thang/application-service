@@ -1,88 +1,88 @@
 # Application Service
 
-[English](README.md) | **Tieng Viet**
+[English](README.md) | **Tiếng Việt**
 
-> Application Identity Domain Service cho Xime Base Platform - registry, metadata, quan ly vong doi va phan quyen he thong cho cac Subject loai APPLICATION.
+> Application Identity Domain Service cho Xime Base Platform - registry, metadata, quản lý vòng đời và phân quyền hệ thống cho các Subject loại APPLICATION.
 
 ---
 
-Application Service la **tang dinh danh ung dung** cua Xime Base Platform. Day la nguon tin cay cho moi Subject loai APPLICATION - mot thuc the cap san pham nhu Xime Social, Xime Chat hay ung dung phong kham nha khoa. Service nay khong cap token va khong nam trong bat ky luong xac thuc nao; ung dung duoc dinh danh bang chung chi mTLS, khong phai JWT.
+Application Service là **tầng định danh ứng dụng** của Xime Base Platform. Đây là nguồn tin cậy cho mọi Subject loại APPLICATION - một thực thể cấp sản phẩm như Xime Social, Xime Chat hay ứng dụng phòng khám nha khoa. Service này không cấp token và không nằm trong bất kỳ luồng xác thực nào; ứng dụng được định danh bằng chứng chỉ mTLS, không phải JWT.
 
 ```
-Cong cu Admin
+Công cụ Admin
   | RegisterApplication (gRPC + mTLS)
   v
-Application Service    <- registry, vong doi, quyen he thong
+Application Service    <- registry, vòng đời, quyền hệ thống
   | SubjectChangedEvent (Kafka + Transactional Outbox)
   v
-Resource Services      <- cache thong tin subject, kiem tra quyen
+Resource Services      <- cache thông tin subject, kiểm tra quyền
 (data-service, ...)
-  ^ PollChangedApplications (gRPC + mTLS) -- pull du phong
+  ^ PollChangedApplications (gRPC + mTLS) -- pull dự phòng
 ```
 
 ---
 
-## Application Service lam gi
+## Application Service làm gì
 
-**Registry ung dung**
-- Cap `identity_id` 24 byte (KSUID) khi dang ky ung dung moi
-- Luu `application_code` (Base62 chu thuong, unique toan platform), ten va mo ta
-- Chuan hoa `application_code` (lowercase + trim) truoc moi thao tac luu hoac tim kiem
+**Registry ứng dụng**
+- Cấp `identity_id` 24 byte (KSUID) khi đăng ký ứng dụng mới
+- Lưu `application_code` (Base62 chữ thường, unique toàn platform), tên và mô tả
+- Chuẩn hóa `application_code` (lowercase + trim) trước mọi thao tác lưu hoặc tìm kiếm
 
-**Quan ly vong doi**
-- Duy tri vong doi: `PENDING_REVIEW` - `ACTIVE` - `SUSPENDED` / `DISABLED` - `RETIRED`
-- Ap dung state machine; tu choi cac chuyen trang thai khong hop le ngay tai tang domain
-- Tang `state_version` va `change_sequence` moi khi status hoac quyen thay doi
+**Quản lý vòng đời**
+- Duy trì vòng đời: `PENDING_REVIEW` - `ACTIVE` - `SUSPENDED` / `DISABLED` - `RETIRED`
+- Áp dụng state machine; từ chối các chuyển trạng thái không hợp lệ ngay tại tầng domain
+- Tăng `state_version` và `change_sequence` mỗi khi status hoặc quyền thay đổi
 
-**Quyen he thong**
-- Cap va thu hoi System Permission (`DATA_CREATE_OBJECT`, `DATA_READ_OBJECT`...) cho subject APPLICATION
-- La nguon truth; resource service giu ban cache va dong bo dinh ky
+**Quyền hệ thống**
+- Cấp và thu hồi System Permission (`DATA_CREATE_OBJECT`, `DATA_READ_OBJECT`...) cho subject APPLICATION
+- Là nguồn truth; resource service giữ bản cache và đồng bộ định kỳ
 
-**Dong bo Subject**
-- Publish `SubjectChangedEvent` len Kafka (qua Transactional Outbox) moi khi state hoac quyen thay doi
-- Expose Pull API (`PollChangedApplications`) de resource service co the reconcile khi khoi dong hoac bi tre
+**Đồng bộ Subject**
+- Publish `SubjectChangedEvent` lên Kafka (qua Transactional Outbox) mỗi khi state hoặc quyền thay đổi
+- Expose Pull API (`PollChangedApplications`) để resource service có thể reconcile khi khởi động hoặc bị trễ
 
-## Application Service KHONG lam gi
+## Application Service KHÔNG làm gì
 
-- Khong cap JWT token - Subject APPLICATION khong dung JWT
-- Khong xac minh credential - APPLICATION khong co credential
-- Khong nam trong luong dang nhap cua Identity Service
-- Khong luu service nao thuoc app nao - Trust Service quan ly qua cert SAN
-- Khong tro thanh runtime dependency cua service khac - resource service song hang tuan bang data da cache
-
----
-
-## Quyet dinh thiet ke quan trong
-
-### APPLICATION duoc dinh danh bang chung chi, khong phai JWT
-
-Moi loi goi nhan danh APPLICATION deu la noi bo. Cert mTLS cua service luon co san va la bang chung so huu (manh hon bearer token). Trust Service nhung `owner_app_identity_id` vao SAN cua cert, nen tien trinh service tu biet minh thuoc app nao ma khong can goi API hay hardcode config.
-
-Dieu nay giu cho Identity Service hoan toan khong lien quan den APPLICATION subject luc runtime.
-
-### Mo hinh dinh danh "Hon - Xac"
-
-Mot ung dung co hai mat dinh danh:
-
-- **Phan hon** (`identity_id`): KSUID 24 byte do Application Service cap khi dang ky. Bat bien, song hang nam. Dung de so huu du lieu, phan quyen va audit "nhan danh ai".
-- **Phan xac** (cert mTLS): do Trust Service cap theo tung tien trinh service. Song ~100 ngay, scale ngang. Dung cho mTLS, routing va audit "tien trinh nao".
-- **Ket noi**: Trust nhung `owner_app_identity_id` vao SAN cua cert. Tien trinh service doc cert cua chinh no de biet minh thuoc app nao - khong can bootstrap API.
-
-Cert chi mang du lieu **bat bien** (binding). Trang thai va quyen di qua kenh dong bo rieng.
-
-### Trang thai va quyen qua kenh dong bo
-
-Cert song ~100 ngay ma khong co thu hoi. Viec tat mot app phai co hieu luc trong vai phut. Vi vay trang thai va quyen he thong duoc truyen tai rieng: Kafka push event (chu yeu) va gRPC pull dinh ky (du phong/reconcile), voi do tre chap nhan duoc tinh bang phut.
-
-### Chuan hoa application_code
-
-`application_code` duoc chuan hoa (lowercase + trim) truoc moi thao tac luu hoac tim kiem, tao ra mot dinh danh co the doc duoc oc nguoi, dung trong URL va file config ma khong nham lan chu hoa/thuong.
+- Không cấp JWT token - Subject APPLICATION không dùng JWT
+- Không xác minh credential - APPLICATION không có credential
+- Không nằm trong luồng đăng nhập của Identity Service
+- Không lưu service nào thuộc app nào - Trust Service quản lý qua cert SAN
+- Không trở thành runtime dependency của service khác - resource service sống hàng tuần bằng data đã cache
 
 ---
 
-## Chay nhanh
+## Quyết định thiết kế quan trọng
 
-> Thiet ke Application Service da xong (2026-06). Chua bat dau viet code.
+### APPLICATION được định danh bằng chứng chỉ, không phải JWT
+
+Mọi lời gọi nhân danh APPLICATION đều là nội bộ. Cert mTLS của service luôn có sẵn và là bằng chứng sở hữu (mạnh hơn bearer token). Trust Service nhúng `owner_app_identity_id` vào SAN của cert, nên tiến trình service tự biết mình thuộc app nào mà không cần gọi API hay hardcode config.
+
+Điều này giữ cho Identity Service hoàn toàn không liên quan đến APPLICATION subject lúc runtime.
+
+### Mô hình định danh "Hồn - Xác"
+
+Một ứng dụng có hai mặt định danh:
+
+- **Phần hồn** (`identity_id`): KSUID 24 byte do Application Service cấp khi đăng ký. Bất biến, sống hàng năm. Dùng để sở hữu dữ liệu, phân quyền và audit "nhân danh ai".
+- **Phần xác** (cert mTLS): do Trust Service cấp theo từng tiến trình service. Sống ~100 ngày, scale ngang. Dùng cho mTLS, routing và audit "tiến trình nào".
+- **Kết nối**: Trust nhúng `owner_app_identity_id` vào SAN của cert. Tiến trình service đọc cert của chính nó để biết mình thuộc app nào - không cần bootstrap API.
+
+Cert chỉ mang dữ liệu **bất biến** (binding). Trạng thái và quyền đi qua kênh đồng bộ riêng.
+
+### Trạng thái và quyền qua kênh đồng bộ
+
+Cert sống ~100 ngày mà không có thu hồi. Việc tắt một app phải có hiệu lực trong vài phút. Vì vậy trạng thái và quyền hệ thống được truyền tải riêng: Kafka push event (chủ yếu) và gRPC pull định kỳ (dự phòng/reconcile), với độ trễ chấp nhận được tính bằng phút.
+
+### Chuẩn hóa application_code
+
+`application_code` được chuẩn hóa (lowercase + trim) trước mọi thao tác lưu hoặc tìm kiếm, tạo ra một định danh có thể đọc được bởi người, dùng trong URL và file config mà không nhầm lẫn chữ hoa/thường.
+
+---
+
+## Chạy nhanh
+
+> Thiết kế Application Service đã xong (2026-06). Chưa bắt đầu viết code.
 
 ```bash
 ./mvnw clean package -DskipTests
@@ -91,44 +91,44 @@ Cert song ~100 ngay ma khong co thu hoi. Viec tat mot app phai co hieu luc trong
 
 REST: `8085` | gRPC: `9094`
 
-Yeu cau PostgreSQL tai `localhost:5432/application_service` va Trust Service (de bootstrap mTLS).
+Yêu cầu PostgreSQL tại `localhost:5432/application_service` và Trust Service (để bootstrap mTLS).
 
 ---
 
-## Kien truc
+## Kiến trúc
 
-Application Service theo **Hexagonal Architecture** voi DDD tactical patterns, xay dung tren Spring Boot 4 / Java 25:
+Application Service theo **Hexagonal Architecture** với DDD tactical patterns, xây dựng trên Spring Boot 4 / Java 25:
 
 ```
 src/main/java/
 +-- api/            <- Input adapter: gRPC (admin + internal subject API)
 +-- application/    <- Use case, port, DTO, mapper
-+-- domain/         <- Business model thuan: aggregate Application, state machine, permission
-+-- integration/    <- Tich hop Trust Service (key, cert, mTLS) - copy tu user-service
++-- domain/         <- Business model thuần: aggregate Application, state machine, permission
++-- integration/    <- Tích hợp Trust Service (key, cert, mTLS) - copy từ user-service
 +-- infrastructure/ <- JPA persistence, Kafka outbox publisher, gRPC client, security
 ```
 
-Business logic (chuyen trang thai, kiem tra quyen, invariant) chi nam trong `domain/`. Use case o `application/usecase/` chi orchestrate: load - goi domain - save - publish event.
+Business logic (chuyển trạng thái, kiểm tra quyền, invariant) chỉ nằm trong `domain/`. Use case ở `application/usecase/` chỉ orchestrate: load - gọi domain - save - publish event.
 
-Repository interface nam o `application/port/out/` (khong phai trong `domain/`).
+Repository interface nằm ở `application/port/out/` (không phải trong `domain/`).
 
 ---
 
-## Tai lieu
+## Tài liệu
 
-| Tai lieu | Mo ta |
+| Tài liệu | Mô tả |
 |---|---|
-| [Tong quan](docs/vn/overview.md) | Vai tro, ranh gioi, vi tri trong Base Platform |
-| [Kien truc](docs/vn/architecture.md) | Cau truc tang, DDD pattern, cay thu muc |
-| [Dinh danh ung dung](docs/vn/application-identity.md) | Mo hinh hon-xac, cert binding, giai quyet subject |
-| [API Reference](docs/vn/api.md) | Dinh nghia gRPC - admin, permission, internal subject |
-| [Co che dong bo](docs/vn/sync.md) | Kafka push + pull du phong, outbox, change_sequence |
+| [Tổng quan](docs/vn/overview.md) | Vai trò, ranh giới, vị trí trong Base Platform |
+| [Kiến trúc](docs/vn/architecture.md) | Cấu trúc tầng, DDD pattern, cây thư mục |
+| [Định danh ứng dụng](docs/vn/application-identity.md) | Mô hình hồn-xác, cert binding, giải quyết subject |
+| [API Reference](docs/vn/api.md) | Định nghĩa gRPC - admin, permission, internal subject |
+| [Cơ chế đồng bộ](docs/vn/sync.md) | Kafka push + pull dự phòng, outbox, change_sequence |
 
 ---
 
-## Cac Service trong Base Platform
+## Các Service trong Base Platform
 
-| Service | Vai tro |
+| Service | Vai trò |
 |---|---|
 | `trust-service` | Trust infrastructure - CA, mTLS, JWT signing key |
 | `identity-service` | Authentication infrastructure - JWT, refresh token |
@@ -136,17 +136,17 @@ Repository interface nam o `application/port/out/` (khong phai trong `domain/`).
 | `agent-service` | Agent Identity Domain Service - Subject BOT, AI_AGENT |
 | `application-service` | **Application Identity Domain Service - Subject APPLICATION** |
 | `data-service` | Data infrastructure - object storage, permission |
-| `notification-service` | Gui thong bao |
-| `payment-service` | Thanh toan |
+| `notification-service` | Gửi thông báo |
+| `payment-service` | Thanh toán |
 
 ---
 
-## Trang thai du an
+## Trạng thái dự án
 
-Thiet ke Application Service da **hoan thanh** (2026-06). Chua bat dau scaffold code. Buoc tiep theo: scaffold theo layout cua user-service, sau do implement domain + application + infrastructure.
+Thiết kế Application Service đã **hoàn thành** (2026-06). Chưa bắt đầu scaffold code. Bước tiếp theo: scaffold theo layout của user-service, sau đó implement domain + application + infrastructure.
 
 ---
 
-## Giay phep
+## Giấy phép
 
 MIT

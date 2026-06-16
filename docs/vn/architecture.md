@@ -1,31 +1,31 @@
-# Application Service - Kien truc
+# Application Service - Kiến trúc
 
 [English](../en/architecture.md)
 
-## Nguyen tac
+## Nguyên tắc
 
-Application Service theo **Hexagonal Architecture** voi DDD tactical patterns, phong cach giong het user-service. Quy tac quan trong nhat phan biet voi user-service: **business logic chi nam trong `domain/`, khong co trong `application/usecase/` hay `application/service/`**.
+Application Service theo **Hexagonal Architecture** với DDD tactical patterns, phong cách giống hệt user-service. Quy tắc quan trọng nhất phân biệt với user-service: **business logic chỉ nằm trong `domain/`, không có trong `application/usecase/` hay `application/service/`**.
 
-Use case chi orchestrate: load qua port - goi domain method - save qua port - publish event. State transition, invariant va kiem tra quyen nam trong domain.
-
----
-
-## Quy tac phu thuoc giua cac tang
-
-```
-domain/          <- khong phu thuoc ai; Java thuan
-application/     <- chi phu thuoc domain
-integration/     <- phu thuoc domain va infrastructure (Trust integration)
-infrastructure/  <- implement port cua application; phu thuoc domain + application
-api/             <- goi use case cua application; phu thuoc application + domain DTO
-config/          <- wire tat ca; phu thuoc moi tang
-```
-
-Vi pham thu tu nay la loi kien truc nghiem trong.
+Use case chỉ orchestrate: load qua port - gọi domain method - save qua port - publish event. State transition, invariant và kiểm tra quyền nằm trong domain.
 
 ---
 
-## Cau truc thu muc
+## Quy tắc phụ thuộc giữa các tầng
+
+```
+domain/          <- không phụ thuộc ai; Java thuần
+application/     <- chỉ phụ thuộc domain
+integration/     <- phụ thuộc domain và infrastructure (Trust integration)
+infrastructure/  <- implement port của application; phụ thuộc domain + application
+api/             <- gọi use case của application; phụ thuộc application + domain DTO
+config/          <- wire tất cả; phụ thuộc mọi tầng
+```
+
+Vi phạm thứ tự này là lỗi kiến trúc nghiêm trọng.
+
+---
+
+## Cấu trúc thư mục
 
 ```
 src/main/java/vn/xime/application/
@@ -58,12 +58,12 @@ src/main/java/vn/xime/application/
 |   |       |                      CheckApplicationCodeExistsPort, LoadChangedApplicationsPort
 |   |       +-- event/             SaveOutboxEventPort, PublishSubjectChangedEventPort
 |   +-- usecase/
-|   |   +-- application/           mot class moi use case
+|   |   +-- application/           một class mỗi use case
 |   |   +-- permission/
 |   |   +-- internal/
 |   +-- mapper/
 |   +-- service/
-|       +-- event/                 ApplicationDomainEventDispatcher (dieu phoi, khong chua rule)
+|       +-- event/                 ApplicationDomainEventDispatcher (điều phối, không chứa rule)
 |
 +-- common/
 |   +-- annotation/
@@ -81,7 +81,7 @@ src/main/java/vn/xime/application/
 |   +-- grpc/
 |   +-- security/
 |   +-- trust/
-|   +-- usecase/                   UseCaseConfig.java - wire tat ca use case bean
+|   +-- usecase/                   UseCaseConfig.java - wire tất cả use case bean
 |
 +-- domain/
 |   +-- sharedkernel/
@@ -107,7 +107,7 @@ src/main/java/vn/xime/application/
 |   +-- error/                     Catalog ErrorCode, Visibility, GrpcCode
 |
 +-- integration/
-|   +-- trust/                     copy tu user-service
+|   +-- trust/                     copy từ user-service
 |       +-- key/                   VerificationKeyResolver, VerificationKeySynchronizer
 |       +-- cert/                  TrustCertificateResolver, TrustCertificateSynchronizer
 |       +-- model/                 Certificate, RootCertificate
@@ -120,7 +120,7 @@ src/main/java/vn/xime/application/
 |   +-- event/                     KafkaSubjectChangedEventPublisher
 |   |                              OutboxEventPublisherScheduler
 |   +-- grpc/
-|   |   +-- trust/                 gRPC client toi Trust Service
+|   |   +-- trust/                 gRPC client tới Trust Service
 |   +-- persistence/
 |   |   +-- entity/                ApplicationEntity, AppSystemPermissionEntity,
 |   |   |                          OutboxEventEntity, CertificateEntity, KeyContextEntity
@@ -138,23 +138,23 @@ src/main/java/vn/xime/application/
 
 ### Application Aggregate
 
-`Application` la aggregate root. Duoc thiet ke theo **immutable style**: moi method thay doi trang thai tra ve instance `Application` moi thay vi mutate truc tiep.
+`Application` là aggregate root. Được thiết kế theo **immutable style**: mỗi method thay đổi trạng thái trả về instance `Application` mới thay vì mutate trực tiếp.
 
 ```
 Application
-  identity_id     : ApplicationId       (KSUID 24 byte, bat bien)
-  applicationCode : ApplicationCode     (value object: Base62 chu thuong, 2-64 ky tu)
-  name            : ApplicationName     (value object: khong rong, toi da 255)
-  description     : ApplicationDescription (value object: nullable, toi da 2000)
+  identity_id     : ApplicationId       (KSUID 24 byte, bất biến)
+  applicationCode : ApplicationCode     (value object: Base62 chữ thường, 2-64 ký tự)
+  name            : ApplicationName     (value object: không rỗng, tối đa 255)
+  description     : ApplicationDescription (value object: nullable, tối đa 2000)
   status          : ApplicationStatus   (PENDING_REVIEW | ACTIVE | SUSPENDED | DISABLED | RETIRED)
-  stateVersion    : long                (tang khi status/permission thay doi)
-  changeSequence  : long                (con tro monotonic, cap nhat cung state_version)
-  tenantId        : TenantId            (null hien tai)
+  stateVersion    : long                (tăng khi status/permission thay đổi)
+  changeSequence  : long                (con trỏ monotonic, cập nhật cùng state_version)
+  tenantId        : TenantId            (null hiện tại)
   permissions     : List<SystemPermission>
-  domainEvents    : List<DomainEvent>   (noi bo, use case pull sau save)
+  domainEvents    : List<DomainEvent>   (nội bộ, use case pull sau save)
 ```
 
-Aggregate load permission cung luc (khong lazy). Domain event duoc raise noi bo, use case goi `pullDomainEvents()` sau khi save.
+Aggregate load permission cùng lúc (không lazy). Domain event được raise nội bộ, use case gọi `pullDomainEvents()` sau khi save.
 
 ### State Machine
 
@@ -167,11 +167,11 @@ SUSPENDED --disable()--> DISABLED
 DISABLED --retire()--> RETIRED
 ```
 
-Moi chuyen trang thai khac deu nem `InvalidStatusTransitionException`. Tat ca dieu kien bao ve nam trong aggregate `Application`, khong phai trong use case.
+Mọi chuyển trạng thái khác đều ném `InvalidStatusTransitionException`. Tất cả điều kiện bảo vệ nằm trong aggregate `Application`, không phải trong use case.
 
 ### SystemPermission
 
-`SystemPermission` la entity trong aggregate `Application`. Giu `app_identity_id` + `PermissionCode`. Enum `PermissionCode` liet ke cac quyen he thong co the cap cho APPLICATION subject:
+`SystemPermission` là entity trong aggregate `Application`. Giữ `app_identity_id` + `PermissionCode`. Enum `PermissionCode` liệt kê các quyền hệ thống có thể cấp cho APPLICATION subject:
 
 ```java
 DATA_CREATE_OBJECT
@@ -180,14 +180,14 @@ DATA_UPDATE_OBJECT
 DATA_DELETE_OBJECT
 DATA_CREATE_SCHEMA
 DATA_READ_SCHEMA
-// mo rong khi them resource service moi
+// mở rộng khi thêm resource service mới
 ```
 
 ---
 
 ## Pattern Use Case
 
-Moi use case deu theo cung mot pattern ba buoc:
+Mỗi use case đều theo cùng một pattern ba bước:
 
 ```java
 @Transactional
@@ -196,7 +196,7 @@ public void activate(ActivateApplicationCommand command) {
     Application app = loadPort.findById(command.identityId())
         .orElseThrow(() -> new ApplicationNotFoundException(command.identityId()));
 
-    // 2. Goi domain - business logic nam trong aggregate
+    // 2. Gọi domain - business logic nằm trong aggregate
     Application activated = app.activate();
 
     // 3. Save qua output port
@@ -207,36 +207,36 @@ public void activate(ActivateApplicationCommand command) {
 }
 ```
 
-Khong co business rule nao duoc viet trong use case. Use case chi la coordinator.
+Không có business rule nào được viết trong use case. Use case chỉ là coordinator.
 
 ---
 
-## Xu ly loi
+## Xử lý lỗi
 
-Application Service dung chuẩn loi hai tang cua platform voi dai ma `030000-039999`:
+Application Service dùng chuẩn lỗi hai tầng của platform với dải mã `030000-039999`:
 
-| Dai ma | Visibility | Dung cho |
+| Dải mã | Visibility | Dùng cho |
 |---|---|---|
-| 030000-033999 | Private (noi bo service) | Loi implementation noi bo |
-| 034000-036999 | System (service khac doc duoc) | Vd `ApplicationNotFoundException` |
-| 037000-039999 | Public (admin client doc duoc) | Vd `DuplicateApplicationCodeException` |
+| 030000-033999 | Private (nội bộ service) | Lỗi implementation nội bộ |
+| 034000-036999 | System (service khác đọc được) | Vd `ApplicationNotFoundException` |
+| 037000-039999 | Public (admin client đọc được) | Vd `DuplicateApplicationCodeException` |
 
-Loi trong `domain/error/` (catalog khong phu thuoc framework). Exception trong `common/exception/` (`AppException` + `PrivateError` / `SystemError` / `PublicError`). REST va gRPC adapter ap dung filter visibility tuong ung.
+Lỗi trong `domain/error/` (catalog không phụ thuộc framework). Exception trong `common/exception/` (`AppException` + `PrivateError` / `SystemError` / `PublicError`). REST và gRPC adapter áp dụng filter visibility tương ứng.
 
-Tham chieu: `trust-service` co layout hoan chinh.
+Tham chiếu: `trust-service` có layout hoàn chỉnh.
 
 ---
 
-## Co so du lieu
+## Cơ sở dữ liệu
 
-Schema quan ly boi JPA `ddl-auto: update` trong giai doan phat trien. Flyway them vao truoc khi deploy production.
+Schema quản lý bởi JPA `ddl-auto: update` trong giai đoạn phát triển. Flyway thêm vào trước khi deploy production.
 
-| Bang | Muc dich |
+| Bảng | Mục đích |
 |---|---|
-| `applications` | Registry ung dung |
-| `app_system_permissions` | Quyen he thong cap cho app |
+| `applications` | Registry ứng dụng |
+| `app_system_permissions` | Quyền hệ thống cấp cho app |
 | `outbox_events` | Transactional Outbox cho Kafka event |
-| `certificates` | Cert mTLS tu Trust (Trust integration) |
-| `key_contexts` | Public key cua Trust de verify JWT admin |
+| `certificates` | Cert mTLS từ Trust (Trust integration) |
+| `key_contexts` | Public key của Trust để verify JWT admin |
 
-File proto trong `src/main/proto/`, bien dich boi Maven protobuf plugin.
+File proto trong `src/main/proto/`, biên dịch bởi Maven protobuf plugin.

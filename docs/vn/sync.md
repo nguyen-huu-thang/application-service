@@ -1,19 +1,19 @@
-# Application Service - Co che dong bo
+# Application Service - Cơ chế đồng bộ
 
 [English](../en/sync.md)
 
-## Tai sao can dong bo
+## Tại sao cần đồng bộ
 
-APPLICATION subject khong dung JWT. Resource service (data-service va cac service khac) can biet hai thu ve moi APPLICATION luc xu ly request:
+APPLICATION subject không dùng JWT. Resource service (data-service và các service khác) cần biết hai thứ về mỗi APPLICATION lúc xử lý request:
 
-1. **Trang thai** - app co dang `ACTIVE` khong? Tu choi request tu app `SUSPENDED` hoac `DISABLED`.
-2. **System Permission** - app co duoc phep thuc hien thao tac nay khong?
+1. **Trạng thái** - app có đang `ACTIVE` không? Từ chối request từ app `SUSPENDED` hoặc `DISABLED`.
+2. **System Permission** - app có được phép thực hiện thao tác này không?
 
-Goi Application Service moi request se tao ra runtime coupling vi pham nguyen tac cach ly loi cua platform. Thay vao do, resource service duy tri mot subject cache cuc bo va cap nhat qua hai kenh: push (Kafka) la co che chu yeu va pull (gRPC) la du phong.
+Gọi Application Service mỗi request sẽ tạo ra runtime coupling vi phạm nguyên tắc cách ly lỗi của platform. Thay vào đó, resource service duy trì một subject cache cục bộ và cập nhật qua hai kênh: push (Kafka) là cơ chế chủ yếu và pull (gRPC) là dự phòng.
 
 ---
 
-## Kenh chinh - Kafka Push
+## Kênh chính - Kafka Push
 
 ### Topic
 
@@ -27,7 +27,7 @@ application.subject.changed
 {
   "event_id": "01HX...",
   "event_type": "APPLICATION_STATUS_CHANGED | APPLICATION_PERMISSION_CHANGED",
-  "identity_id": "<hex 48 ky tu, 24 byte>",
+  "identity_id": "<hex 48 ký tự, 24 byte>",
   "status": "ACTIVE",
   "permissions": ["DATA_CREATE_OBJECT", "DATA_READ_OBJECT"],
   "state_version": 5,
@@ -37,35 +37,35 @@ application.subject.changed
 }
 ```
 
-Payload la **snapshot** toan bo trang thai ung dung, khong phai diff. Consumer thay the toan bo entry cache, nen khong can xu ly event theo thu tu hay xu ly partial update.
+Payload là **snapshot** toàn bộ trạng thái ứng dụng, không phải diff. Consumer thay thế toàn bộ entry cache, nên không cần xử lý event theo thứ tự hay xử lý partial update.
 
 ### Trigger
 
-`SubjectChangedEvent` duoc ghi vao bang outbox trong cung transaction database voi viec luu thay doi trang thai ung dung. Outbox scheduler publish len Kafka.
+`SubjectChangedEvent` được ghi vào bảng outbox trong cùng transaction database với việc lưu thay đổi trạng thái ứng dụng. Outbox scheduler publish lên Kafka.
 
-### Cac event nao tao Kafka message
+### Các event nào tạo Kafka message
 
-| Domain Event | Tao Kafka? | Ly do |
+| Domain Event | Tạo Kafka? | Lý do |
 |---|---|---|
-| `ApplicationRegisteredEvent` | Khong | App van o `PENDING_REVIEW`; resource service chua can |
-| `ApplicationActivatedEvent` | Co | App bat dau hoat dong duoc |
-| `ApplicationSuspendedEvent` | Co | Resource service phai bat dau tu choi request |
-| `ApplicationReactivatedEvent` | Co | Resource service phai bat dau chap nhan request tro lai |
-| `ApplicationDisabledEvent` | Co | Resource service tu choi tat ca request mai mai |
-| `ApplicationRetiredEvent` | Co | App khong con ton tai |
-| `SystemPermissionGrantedEvent` | Co | Tap quyen thay doi |
-| `SystemPermissionRevokedEvent` | Co | Tap quyen thay doi |
+| `ApplicationRegisteredEvent` | Không | App vẫn ở `PENDING_REVIEW`; resource service chưa cần |
+| `ApplicationActivatedEvent` | Có | App bắt đầu hoạt động được |
+| `ApplicationSuspendedEvent` | Có | Resource service phải bắt đầu từ chối request |
+| `ApplicationReactivatedEvent` | Có | Resource service phải bắt đầu chấp nhận request trở lại |
+| `ApplicationDisabledEvent` | Có | Resource service từ chối tất cả request mãi mãi |
+| `ApplicationRetiredEvent` | Có | App không còn tồn tại |
+| `SystemPermissionGrantedEvent` | Có | Tập quyền thay đổi |
+| `SystemPermissionRevokedEvent` | Có | Tập quyền thay đổi |
 
 ---
 
 ## Transactional Outbox
 
-Cach don gian la publish truc tiep len Kafka sau khi save co race condition: database transaction co the commit thanh cong, nhung Kafka publish co the that bai, de lai event bi mat vinh vien.
+Cách đơn giản là publish trực tiếp lên Kafka sau khi save có race condition: database transaction có thể commit thành công, nhưng Kafka publish có thể thất bại, để lại event bị mất vĩnh viễn.
 
-Pattern Transactional Outbox loai bo dieu nay:
+Pattern Transactional Outbox loại bỏ điều này:
 
-1. **Trong business transaction**: luu trang thai ung dung + insert event vao `outbox_events` - mot thao tac ghi nguyen tu.
-2. **Outbox scheduler** (tien trinh rieng): poll `outbox_events WHERE published = false`, publish len Kafka, danh dau `published = true`.
+1. **Trong business transaction**: lưu trạng thái ứng dụng + insert event vào `outbox_events` - một thao tác ghi nguyên tử.
+2. **Outbox scheduler** (tiến trình riêng): poll `outbox_events WHERE published = false`, publish lên Kafka, đánh dấu `published = true`.
 
 ```sql
 CREATE TABLE outbox_events (
@@ -81,44 +81,44 @@ CREATE INDEX idx_outbox_unpublished ON outbox_events (published, created_at)
     WHERE published = FALSE;
 ```
 
-Scheduler doc cac row chua publish theo thu tu tao ra va publish chung. Khi Kafka that bai thi retry; event khong bao gio bi mat mien la database con hoat dong.
+Scheduler đọc các row chưa publish theo thứ tự tạo ra và publish chúng. Khi Kafka thất bại thì retry; event không bao giờ bị mất miễn là database còn hoạt động.
 
 ---
 
-## Kenh du phong - gRPC Pull
+## Kênh dự phòng - gRPC Pull
 
-Resource service goi `PollChangedApplications` moi ~5 phut lam mang luoi an toan. Xu ly cac truong hop:
+Resource service gọi `PollChangedApplications` mỗi ~5 phút làm mạng lưới an toàn. Xử lý các trường hợp:
 
-- Kafka consumer bi tre hoac ngung thoang qua
-- Resource service moi khoi dong (can hydrate cache tu dau)
-- Event da duoc publish len Kafka nhung chua duoc consume (consumer restart, rebalance)
+- Kafka consumer bị trễ hoặc ngừng thoáng qua
+- Resource service mới khởi động (cần hydrate cache từ đầu)
+- Event đã được publish lên Kafka nhưng chưa được consume (consumer restart, rebalance)
 
-### Vong lap pull
+### Vòng lặp pull
 
 ```
-khoi dong:
-    cursor = doc last_change_sequence tu local store (0 neu lan dau chay)
+khởi động:
+    cursor = đọc last_change_sequence từ local store (0 nếu lần đầu chạy)
 
-moi 5 phut (va khi khoi dong):
-    vong lap:
+mỗi 5 phút (và khi khởi động):
+    vòng lặp:
         response = PollChangedApplications(after_sequence=cursor, limit=200)
-        voi moi app trong response.applications:
-            upsert vao subject_cache cuc bo
+        với mỗi app trong response.applications:
+            upsert vào subject_cache cục bộ
         cursor = response.max_sequence
-        neu khong has_more: thoat vong lap
-    luu cursor vao local store
+        nếu không has_more: thoát vòng lặp
+    lưu cursor vào local store
 ```
 
-### Tai sao dung change_sequence thay vi updated_at
+### Tại sao dùng change_sequence thay vì updated_at
 
-| Van de | updated_at | change_sequence |
+| Vấn đề | updated_at | change_sequence |
 |---|---|---|
-| Clock skew giua cac node | Co the - hai node co the khong dong ho | Khong the - sequence chi tinh phia server |
-| Ghi khong theo thu tu | Co - concurrent update co the xep sai thu tu | Khong bao gio - BIGSERIAL tang monotonic |
-| Phan trang chinh xac | Khong - hai event cung milli giay co the bi bo sot | Co - sequence la unique, phan trang chinh xac |
-| Reset khi khoi dong lai | Khong - nhung van co the mat nhat quan | Khong bao gio - BIGSERIAL khong bao gio reset |
+| Clock skew giữa các node | Có thể - hai node có thể không đồng hồ | Không thể - sequence chỉ tính phía server |
+| Ghi không theo thứ tự | Có - concurrent update có thể xếp sai thứ tự | Không bao giờ - BIGSERIAL tăng monotonic |
+| Phân trang chính xác | Không - hai event cùng milli giây có thể bị bỏ sót | Có - sequence là unique, phân trang chính xác |
+| Reset khi khởi động lại | Không - nhưng vẫn có thể mất nhất quán | Không bao giờ - BIGSERIAL không bao giờ reset |
 
-`change_sequence` la cot `BIGSERIAL` cap nhat cung voi `state_version` moi khi trang thai hoac quyen thay doi. Query cua Pull API:
+`change_sequence` là cột `BIGSERIAL` cập nhật cùng với `state_version` mỗi khi trạng thái hoặc quyền thay đổi. Query của Pull API:
 
 ```sql
 SELECT * FROM applications
@@ -129,9 +129,9 @@ LIMIT :limit
 
 ---
 
-## Mo hinh cache tren Resource Service
+## Mô hình cache trên Resource Service
 
-Resource service duoc ky vong duy tri hai cau truc cache cho moi APPLICATION:
+Resource service được kỳ vọng duy trì hai cấu trúc cache cho mỗi APPLICATION:
 
 ```
 subject_cache (theo identity_id):
@@ -146,25 +146,25 @@ subject_permissions (theo identity_id):
     permission     string
 ```
 
-Khi co request tu APPLICATION (xac dinh qua cert SAN):
-1. Tra cuu `subject_cache` theo `identity_id`
-2. Neu miss: goi `GetSubjectInfo`, nap cache
-3. Kiem tra `status == ACTIVE`; tu choi neu khong
-4. Tra cuu `subject_permissions`; kiem tra quyen can thiet co trong do
+Khi có request từ APPLICATION (xác định qua cert SAN):
+1. Tra cứu `subject_cache` theo `identity_id`
+2. Nếu miss: gọi `GetSubjectInfo`, nạp cache
+3. Kiểm tra `status == ACTIVE`; từ chối nếu không
+4. Tra cứu `subject_permissions`; kiểm tra quyền cần thiết có trong đó
 
-Truong `state_version` cho phep cache phat hien entry cu: neu push event den voi `state_version` thap hon entry dang cache, bo qua no nhu duplicate.
+Trường `state_version` cho phép cache phát hiện entry cũ: nếu push event đến với `state_version` thấp hơn entry đang cache, bỏ qua nó như duplicate.
 
 ---
 
-## Dam bao do tre
+## Đảm bảo độ trễ
 
-| Su kien | Thoi gian truyen tai du kien |
+| Sự kiện | Thời gian truyền tải dự kiến |
 |---|---|
-| Thay doi trang thai/quyen duoc commit vao DB | 0 ms |
-| Row outbox duoc ghi (cung transaction) | 0 ms |
-| Kafka event duoc publish boi scheduler | < 5 giay (khoang scheduler) |
-| Kafka consumer xu ly event | < 5 giay (consumer lag) |
-| **End-to-end: thay doi hien thi trong resource service** | **< 30 giay trong dieu kien binh thuong** |
-| Pull fallback bat kip | < 10 phut (poll 5 phut + xu ly) |
+| Thay đổi trạng thái/quyền được commit vào DB | 0 ms |
+| Row outbox được ghi (cùng transaction) | 0 ms |
+| Kafka event được publish bởi scheduler | < 5 giây (khoảng scheduler) |
+| Kafka consumer xử lý event | < 5 giây (consumer lag) |
+| **End-to-end: thay đổi hiển thị trong resource service** | **< 30 giây trong điều kiện bình thường** |
+| Pull fallback bắt kịp | < 10 phút (poll 5 phút + xử lý) |
 
-Tat mot app (trang thai `DISABLED`) co hieu luc trong resource service trong vong 30 giay. Day la chap nhan duoc vi boi canh van hanh (hanh dong cua admin, khong phai tu dong).
+Tắt một app (trạng thái `DISABLED`) có hiệu lực trong resource service trong vòng 30 giây. Đây là chấp nhận được vì bối cảnh vận hành (hành động của admin, không phải tự động).

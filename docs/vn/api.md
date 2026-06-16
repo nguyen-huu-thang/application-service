@@ -2,23 +2,23 @@
 
 [English](../en/api.md)
 
-Tat ca API deu la gRPC qua mTLS. Khong co REST endpoint public cho nghiep vu (chi co health/actuator tren HTTP 8085).
+Tất cả API đều là gRPC qua mTLS. Không có REST endpoint public cho nghiệp vụ (chỉ có health/actuator trên HTTP 8085).
 
 ---
 
 ## File Proto
 
-| File | Package | Muc dich |
+| File | Package | Mục đích |
 |---|---|---|
-| `external/application/application_admin.proto` | `vn.xime.application.external` | CRUD va vong doi ung dung (admin) |
-| `external/permission/application_permission.proto` | `vn.xime.application.external` | Quan ly System Permission (admin) |
-| `internal/subject/application_subject.proto` | `vn.xime.application.internal` | Dong bo subject cho resource service |
+| `external/application/application_admin.proto` | `vn.xime.application.external` | CRUD và vòng đời ứng dụng (admin) |
+| `external/permission/application_permission.proto` | `vn.xime.application.external` | Quản lý System Permission (admin) |
+| `internal/subject/application_subject.proto` | `vn.xime.application.internal` | Đồng bộ subject cho resource service |
 
 ---
 
 ## External - ApplicationAdminService
 
-Dung boi cong cu admin de dang ky va quan ly ung dung.
+Dùng bởi công cụ admin để đăng ký và quản lý ứng dụng.
 
 ```proto
 service ApplicationAdminService {
@@ -35,25 +35,25 @@ service ApplicationAdminService {
 
 ### RegisterApplication
 
-Tao ung dung moi voi trang thai `PENDING_REVIEW` va cap `identity_id` vinh vien.
+Tạo ứng dụng mới với trạng thái `PENDING_REVIEW` và cấp `identity_id` vĩnh viễn.
 
 ```proto
 message RegisterApplicationRequest {
-    string application_code = 1;  // Base62 chu thuong, 2-64 ky tu, vd "xime-social"
-    string name             = 2;  // bat buoc, toi da 255 ky tu
-    string description      = 3;  // tuy chon, toi da 2000 ky tu
+    string application_code = 1;  // Base62 chữ thường, 2-64 ký tự, vd "xime-social"
+    string name             = 2;  // bắt buộc, tối đa 255 ký tự
+    string description      = 3;  // tùy chọn, tối đa 2000 ký tự
 }
 message RegisterApplicationResponse {
     bytes  identity_id      = 1;  // KSUID 24 byte
-    string application_code = 2;  // gia tri da duoc chuan hoa luu vao DB
+    string application_code = 2;  // giá trị đã được chuẩn hóa lưu vào DB
 }
 ```
 
-`application_code` duoc chuan hoa (lowercase + trim) truoc khi luu. Code trung tra ve `ALREADY_EXISTS`.
+`application_code` được chuẩn hóa (lowercase + trim) trước khi lưu. Code trùng trả về `ALREADY_EXISTS`.
 
-### Cac phuong thuc vong doi
+### Các phương thức vòng đời
 
-Tat ca deu nhan `ApplicationIdRequest`:
+Tất cả đều nhận `ApplicationIdRequest`:
 
 ```proto
 message ApplicationIdRequest {
@@ -61,15 +61,15 @@ message ApplicationIdRequest {
 }
 ```
 
-| RPC | Trang thai hop le | Trang thai ket qua |
+| RPC | Trạng thái hợp lệ | Trạng thái kết quả |
 |---|---|---|
 | `ActivateApplication` | `PENDING_REVIEW` | `ACTIVE` |
 | `SuspendApplication` | `ACTIVE` | `SUSPENDED` |
 | `ReactivateApplication` | `SUSPENDED` | `ACTIVE` |
-| `DisableApplication` | `ACTIVE` hoac `SUSPENDED` | `DISABLED` |
+| `DisableApplication` | `ACTIVE` hoặc `SUSPENDED` | `DISABLED` |
 | `RetireApplication` | `DISABLED` | `RETIRED` |
 
-Chuyen trang thai khong hop le tra ve `FAILED_PRECONDITION`.
+Chuyển trạng thái không hợp lệ trả về `FAILED_PRECONDITION`.
 
 ### GetApplication / ListApplications
 
@@ -82,13 +82,13 @@ message ApplicationResponse {
     string status            = 5;  // PENDING_REVIEW | ACTIVE | SUSPENDED | DISABLED | RETIRED
     int64  state_version     = 6;
     int64  change_sequence   = 7;
-    repeated string permissions = 8;  // danh sach PermissionCode dang duoc cap
+    repeated string permissions = 8;  // danh sách PermissionCode đang được cấp
     int64  created_at        = 9;   // epoch millis
     int64  updated_at        = 10;
 }
 
 message ListApplicationsRequest {
-    string status_filter = 1;  // tuy chon, loc theo trang thai
+    string status_filter = 1;  // tùy chọn, lọc theo trạng thái
     int32  page          = 2;
     int32  size          = 3;
 }
@@ -102,7 +102,7 @@ message ListApplicationsResponse {
 
 ## External - ApplicationPermissionService
 
-Dung boi cong cu admin de quan ly System Permission cho APPLICATION subject.
+Dùng bởi công cụ admin để quản lý System Permission cho APPLICATION subject.
 
 ```proto
 service ApplicationPermissionService {
@@ -115,34 +115,34 @@ message PermissionRequest {
 }
 ```
 
-### Hanh vi
+### Hành vi
 
-- `GrantSystemPermission`: them quyen vao tap quyen cua app. Tra ve `ALREADY_EXISTS` neu da cap.
-- `RevokeSystemPermission`: xoa quyen. Tra ve `NOT_FOUND` neu chua duoc cap.
-- Ca hai deu tang `state_version` va `change_sequence`, sau do publish `SubjectChangedEvent`.
+- `GrantSystemPermission`: thêm quyền vào tập quyền của app. Trả về `ALREADY_EXISTS` nếu đã cấp.
+- `RevokeSystemPermission`: xóa quyền. Trả về `NOT_FOUND` nếu chưa được cấp.
+- Cả hai đều tăng `state_version` và `change_sequence`, sau đó publish `SubjectChangedEvent`.
 
-### Cac gia tri PermissionCode
+### Các giá trị PermissionCode
 
-| Code | Y nghia |
+| Code | Ý nghĩa |
 |---|---|
-| `DATA_CREATE_OBJECT` | Tao object trong data-service |
-| `DATA_READ_OBJECT` | Doc object trong data-service |
-| `DATA_UPDATE_OBJECT` | Cap nhat object trong data-service |
-| `DATA_DELETE_OBJECT` | Xoa object trong data-service |
-| `DATA_CREATE_SCHEMA` | Tao schema trong data-service |
-| `DATA_READ_SCHEMA` | Doc schema trong data-service |
+| `DATA_CREATE_OBJECT` | Tạo object trong data-service |
+| `DATA_READ_OBJECT` | Đọc object trong data-service |
+| `DATA_UPDATE_OBJECT` | Cập nhật object trong data-service |
+| `DATA_DELETE_OBJECT` | Xóa object trong data-service |
+| `DATA_CREATE_SCHEMA` | Tạo schema trong data-service |
+| `DATA_READ_SCHEMA` | Đọc schema trong data-service |
 
-Permission code moi se them vao khi co resource service moi gia nhap platform.
+Permission code mới sẽ thêm vào khi có resource service mới gia nhập platform.
 
 ---
 
 ## Internal - ApplicationSubjectService
 
-Dung boi resource service (data-service...) de:
-1. Lay thong tin subject cu the khi miss cache
-2. Pull batch cac app thay doi de reconcile dinh ky
+Dùng bởi resource service (data-service...) để:
+1. Lấy thông tin subject cụ thể khi miss cache
+2. Pull batch các app thay đổi để reconcile định kỳ
 
-Xac thuc: gRPC + mTLS. Caller phai co client certificate hop le do Trust cap.
+Xác thực: gRPC + mTLS. Caller phải có client certificate hợp lệ do Trust cấp.
 
 ```proto
 service ApplicationSubjectService {
@@ -153,7 +153,7 @@ service ApplicationSubjectService {
 
 ### GetSubjectInfo
 
-Tra cuu truc tiep - dung khi resource service bi miss cache voi mot `identity_id` cu the.
+Tra cứu trực tiếp - dùng khi resource service bị miss cache với một `identity_id` cụ thể.
 
 ```proto
 message GetSubjectInfoRequest {
@@ -161,7 +161,7 @@ message GetSubjectInfoRequest {
 }
 message SubjectInfoResponse {
     bytes  identity_id       = 1;
-    string subject_type      = 2;  // luon la "APPLICATION"
+    string subject_type      = 2;  // luôn là "APPLICATION"
     string status            = 3;  // PENDING_REVIEW | ACTIVE | SUSPENDED | DISABLED | RETIRED
     int64  state_version     = 4;
     int64  change_sequence   = 5;
@@ -170,48 +170,48 @@ message SubjectInfoResponse {
 }
 ```
 
-Tra ve `NOT_FOUND` neu khong co ung dung nao voi `identity_id` do.
+Trả về `NOT_FOUND` nếu không có ứng dụng nào với `identity_id` đó.
 
 ### PollChangedApplications
 
-Pull theo lo - dung de reconcile khi khoi dong va dong bo du phong dinh ky.
+Pull theo lô - dùng để reconcile khi khởi động và đồng bộ dự phòng định kỳ.
 
 ```proto
 message PollChangedRequest {
-    int64 after_sequence = 1;  // 0 = lay tat ca, hoac cursor tu lan poll truoc
-    int32 limit          = 2;  // toi da 200 moi lan goi
+    int64 after_sequence = 1;  // 0 = lấy tất cả, hoặc cursor từ lần poll trước
+    int32 limit          = 2;  // tối đa 200 mỗi lần gọi
 }
 message PollChangedResponse {
     repeated SubjectInfoResponse applications = 1;
-    int64 max_sequence = 2;  // change_sequence lon nhat trong response, dung lam cursor tiep theo
-    bool  has_more     = 3;  // true neu con trang tiep theo
+    int64 max_sequence = 2;  // change_sequence lớn nhất trong response, dùng làm cursor tiếp theo
+    bool  has_more     = 3;  // true nếu còn trang tiếp theo
 }
 ```
 
-**Pattern phan trang:**
+**Pattern phân trang:**
 
 ```
 cursor = 0
-vong lap:
+vòng lặp:
     response = PollChangedApplications(after_sequence=cursor, limit=200)
-    xu ly response.applications
+    xử lý response.applications
     cursor = response.max_sequence
-    neu khong has_more: thoat vong lap
-luu cursor lam last_change_sequence cho lan poll tiep theo
+    nếu không has_more: thoát vòng lặp
+lưu cursor làm last_change_sequence cho lần poll tiếp theo
 ```
 
-`change_sequence` tang monotonic va khong bao gio reset, nen an toan dung lam cursor qua cac lan khoi dong lai va ngat mang.
+`change_sequence` tăng monotonic và không bao giờ reset, nên an toàn dùng làm cursor qua các lần khởi động lại và ngắt mạng.
 
 ---
 
-## Ma loi
+## Mã lỗi
 
-Application Service dung dai ma `030000-039999`:
+Application Service dùng dải mã `030000-039999`:
 
-| Dai ma | Visibility | Vi du |
+| Dải mã | Visibility | Ví dụ |
 |---|---|---|
-| 030000-033999 | Private (noi bo service) | Loi implementation noi bo |
-| 034000-036999 | System (service khac doc duoc) | `ApplicationNotFoundException` |
-| 037000-039999 | Public (admin client doc duoc) | `DuplicateApplicationCodeException` |
+| 030000-033999 | Private (nội bộ service) | Lỗi implementation nội bộ |
+| 034000-036999 | System (service khác đọc được) | `ApplicationNotFoundException` |
+| 037000-039999 | Public (admin client đọc được) | `DuplicateApplicationCodeException` |
 
-gRPC error mang metadata header `xime-error` chua `{errorKey, code, message}`. REST error dung body `{errorKey, code, message}`.
+gRPC error mang metadata header `xime-error` chứa `{errorKey, code, message}`. REST error dùng body `{errorKey, code, message}`.

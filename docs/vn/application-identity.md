@@ -1,140 +1,140 @@
-# Application Service - Dinh danh ung dung
+# Application Service - Định danh ứng dụng
 
 [English](../en/application-identity.md)
 
-## Ba khai niem can phan biet ro
+## Ba khái niệm cần phân biệt rõ
 
-| Khai niem | La gi | Dinh danh | Vi du |
+| Khái niệm | Là gì | Định danh | Ví dụ |
 |---|---|---|---|
-| **SERVICE** | Workload runtime, ha tang | Cert mTLS (`service_id`, `shard_id`) do Trust cap | `social-post-service`, `data-service` |
-| **APPLICATION** | San pham logic, Subject hang dau | `identity_id` 24 byte do Application Service cap | Xime Social, app nha khoa |
-| **BOT / AI_AGENT** | Tac nhan tu hanh, Subject hang dau | `identity_id` 24 byte do Agent Service cap | Moderation Bot, AI Assistant |
+| **SERVICE** | Workload runtime, hạ tầng | Cert mTLS (`service_id`, `shard_id`) do Trust cấp | `social-post-service`, `data-service` |
+| **APPLICATION** | Sản phẩm logic, Subject hạng đầu | `identity_id` 24 byte do Application Service cấp | Xime Social, app nha khoa |
+| **BOT / AI_AGENT** | Tác nhân tự hành, Subject hạng đầu | `identity_id` 24 byte do Agent Service cấp | Moderation Bot, AI Assistant |
 
-**Luat bat bien: SERVICE khong bao gio la Subject.** No khong bao gio xuat hien voi tu cach so huu du lieu, giu quyen, hay trong truong `sub` cua JWT. Service hanh dong *thay mat* Subject.
+**Luật bất biến: SERVICE không bao giờ là Subject.** Nó không bao giờ xuất hiện với tư cách sở hữu dữ liệu, giữ quyền, hay trong trường `sub` của JWT. Service hành động *thay mặt* Subject.
 
 ---
 
-## Mo hinh "Hon - Xac"
+## Mô hình "Hồn - Xác"
 
-Mot APPLICATION co hai mat dinh danh, giong nhu "hon" va "xac":
+Một APPLICATION có hai mặt định danh, giống như "hồn" và "xác":
 
-### Phan hon - identity_id
+### Phần hồn - identity_id
 
-- KSUID 24 byte, do Application Service cap khi dang ky
-- **Bat bien vinh vien** - song theo vong doi san pham, co the hang nam
-- Dung cho: so huu du lieu, phan quyen, audit "nhan danh ai"
-- Luu trong bang `applications`; la khoa shard routing cho du lieu thuoc app nay
+- KSUID 24 byte, do Application Service cấp khi đăng ký
+- **Bất biến vĩnh viễn** - sống theo vòng đời sản phẩm, có thể hàng năm
+- Dùng cho: sở hữu dữ liệu, phân quyền, audit "nhân danh ai"
+- Lưu trong bảng `applications`; là khóa shard routing cho dữ liệu thuộc app này
 
-### Phan xac - Cert mTLS
+### Phần xác - Cert mTLS
 
-- Do Trust Service cap cho tung tien trinh service
-- **Nhat thoi** - song khoang 100 ngay, rotate theo deploy
-- Dung cho: bat tay mTLS, routing service, audit "tien trinh nao"
-- Mot app co quan he 1:N voi cert: mot app, nhieu tien trinh service
+- Do Trust Service cấp cho từng tiến trình service
+- **Nhất thời** - sống khoảng 100 ngày, rotate theo deploy
+- Dùng cho: bắt tay mTLS, routing service, audit "tiến trình nào"
+- Một app có quan hệ 1:N với cert: một app, nhiều tiến trình service
 
-### Ket noi - owner_app_identity_id trong SAN cua cert
+### Kết nối - owner_app_identity_id trong SAN của cert
 
-Bang `services` cua Trust co cot nullable:
+Bảng `services` của Trust có cột nullable:
 
 ```
 services.owner_app_identity_id  BYTEA(24)  NULL
 ```
 
-- `NULL` cho cac service Base Platform (khong thuoc APPLICATION nao)
-- Duoc dat bang `identity_id` cua app cho cac tien trinh service thuoc Application Layer
+- `NULL` cho các service Base Platform (không thuộc APPLICATION nào)
+- Được đặt bằng `identity_id` của app cho các tiến trình service thuộc Application Layer
 
-Khi Trust cap cert, no nhung gia tri `owner_app_identity_id` vao mot entry Subject Alternative Name (SAN) canh `service_id`. Gia tri nay la opaque voi Trust - no khong biet app do la gi.
+Khi Trust cấp cert, nó nhúng giá trị `owner_app_identity_id` vào một entry Subject Alternative Name (SAN) cạnh `service_id`. Giá trị này là opaque với Trust - nó không biết app đó là gì.
 
-Tien trinh service doc cert cua chinh no luc khoi dong de biet minh thuoc app nao. **Khong can goi bootstrap API. Khong can hardcode app id trong config.**
-
----
-
-## Tai sao cert chi mang du lieu bat bien
-
-Cert song ~100 ngay va khong co thu hoi CRL trong thiet ke nay. Neu cert mang trang thai hoac quyen:
-
-- Vo hieu hoa mot app nguy hiem doi hoi thu hoi va tai cap hang tram cert - khong kha thi van hanh
-- Trang thai `SUSPENDED` se mat 100 ngay moi co hieu luc trong truong hop xau nhat
-
-Vi vay cert chi mang **binding bat bien** (service nay thuoc app nao). Moi trang thai co the thay doi - trang thai ung dung va System Permission - di qua kenh dong bo rieng (Kafka push + pull dinh ky), voi do tre chap nhan duoc tinh bang phut.
-
-```
-Cert (Trust):                    "service nay thuoc app X" - bat bien
-Application Service -> resource: trang thai app + System Permission - co the thay doi, qua kenh sync
-```
+Tiến trình service đọc cert của chính nó lúc khởi động để biết mình thuộc app nào. **Không cần gọi bootstrap API. Không cần hardcode app id trong config.**
 
 ---
 
-## Giai quyet Subject tai resource service
+## Tại sao cert chỉ mang dữ liệu bất biến
 
-Resource service xac dinh Subject dang hoat dong tu moi request den:
+Cert sống ~100 ngày và không có thu hồi CRL trong thiết kế này. Nếu cert mang trạng thái hoặc quyền:
+
+- Vô hiệu hóa một app nguy hiểm đòi hỏi thu hồi và tái cấp hàng trăm cert - không khả thi vận hành
+- Trạng thái `SUSPENDED` sẽ mất 100 ngày mới có hiệu lực trong trường hợp xấu nhất
+
+Vì vậy cert chỉ mang **binding bất biến** (service này thuộc app nào). Mọi trạng thái có thể thay đổi - trạng thái ứng dụng và System Permission - đi qua kênh đồng bộ riêng (Kafka push + pull định kỳ), với độ trễ chấp nhận được tính bằng phút.
 
 ```
-Request co JWT              -> subject = JWT.sub                       (HUMAN / BOT / AI_AGENT)
-Khong JWT, cert co app id   -> subject = cert.owner_app_identity_id   (APPLICATION)
-Khong JWT, cert khong app id -> khong co subject (chi endpoint ha tang: health, sync)
+Cert (Trust):                    "service này thuộc app X" - bất biến
+Application Service -> resource: trạng thái app + System Permission - có thể thay đổi, qua kênh sync
 ```
 
-**JWT thang khi ca hai cung co mat.** Loi goi muon hanh dong nhan danh APPLICATION thi khong duoc kem JWT - y dinh ro rang qua cau truc request.
+---
 
-Log audit ghi cap: subject (hon) + actor (`service_id` tu cert - xac).
+## Giải quyết Subject tại resource service
 
-Canh REST public khong co client cert, nen APPLICATION subject khong the den tu ngoai mTLS mesh.
+Resource service xác định Subject đang hoạt động từ mỗi request đến:
 
-Ca gRPC lan REST noi bo deu resolve ve cung mot model:
+```
+Request có JWT              -> subject = JWT.sub                       (HUMAN / BOT / AI_AGENT)
+Không JWT, cert có app id   -> subject = cert.owner_app_identity_id   (APPLICATION)
+Không JWT, cert không app id -> không có subject (chỉ endpoint hạ tầng: health, sync)
+```
+
+**JWT thắng khi cả hai cùng có mặt.** Lời gọi muốn hành động nhân danh APPLICATION thì không được kèm JWT - ý định rõ ràng qua cấu trúc request.
+
+Log audit ghi cặp: subject (hồn) + actor (`service_id` từ cert - xác).
+
+Cạnh REST public không có client cert, nên APPLICATION subject không thể đến từ ngoài mTLS mesh.
+
+Cả gRPC lẫn REST nội bộ đều resolve về cùng một model:
 
 ```java
 AuthenticatedSubject {
     identity_id,
     subject_type,       // APPLICATION
-    actor_service_id,   // tu cert
-    tenant_id           // null hien tai
+    actor_service_id,   // từ cert
+    tenant_id           // null hiện tại
 }
 ```
 
 ---
 
-## Thu tu bootstrap
+## Thứ tự bootstrap
 
-Thuc hien mot lan boi admin, khong tu dong hoa:
+Thực hiện một lần bởi admin, không tự động hóa:
 
 ```
-1. Dang ky app tai Application Service  -> nhan identity_id (24 byte)
-2. Dang ky tien trinh service tai Trust,
-   cung cap owner_app_identity_id
-3. Trust cap cert                        -> app identity_id nhung vao SAN cua cert
-4. Tien trinh service khoi dong, doc cert -> tu biet minh thuoc app nao
+1. Đăng ký app tại Application Service  -> nhận identity_id (24 byte)
+2. Đăng ký tiến trình service tại Trust,
+   cung cấp owner_app_identity_id
+3. Trust cấp cert                        -> app identity_id nhúng vào SAN của cert
+4. Tiến trình service khởi động, đọc cert -> tự biết mình thuộc app nào
 ```
 
-Chong dual-write: danh sach "app X gom nhung service nao" do Trust quan ly. Application Service doc tu Trust khi can hien thi thong tin nay - khong giu ban sao.
+Chống dual-write: danh sách "app X gồm những service nào" do Trust quản lý. Application Service đọc từ Trust khi cần hiển thị thông tin này - không giữ bản sao.
 
 ---
 
-## Tai sao APPLICATION khong dung JWT
+## Tại sao APPLICATION không dùng JWT
 
-| Yeu to | Chi tiet |
+| Yếu tố | Chi tiết |
 |---|---|
-| Moi loi goi deu la noi bo | Khong can token bao ngoai; mTLS da bat buoc tren moi hop noi bo |
-| Cert la bang chung so huu | Manh hon bearer; khong the an cap va phat lai ma khong co private key |
-| Khong phu thuoc Identity luc runtime | Identity Service khong co vai tro o day; giam coupling |
-| Khong lo ro token | JWT co the bi log, cache, forward; cert khong the roi khoi TLS context |
-| Chi phi them gan bang 0 | mTLS verify da chay tren moi loi goi noi bo; phan tich SAN la khong dang ke |
+| Mọi lời gọi đều là nội bộ | Không cần token bảo ngoài; mTLS đã bắt buộc trên mọi hop nội bộ |
+| Cert là bằng chứng sở hữu | Mạnh hơn bearer; không thể ăn cắp và phát lại mà không có private key |
+| Không phụ thuộc Identity lúc runtime | Identity Service không có vai trò ở đây; giảm coupling |
+| Không lo rò token | JWT có thể bị log, cache, forward; cert không thể rời khỏi TLS context |
+| Chi phí thêm gần bằng 0 | mTLS verify đã chạy trên mọi lời gọi nội bộ; phân tích SAN là không đáng kể |
 
 ---
 
-## Tai sao khong dung service_id lam owner du lieu
+## Tại sao không dùng service_id làm owner dữ liệu
 
-Tien trinh service la nhat thoi. Chung duoc redeploy, doi ten, scale ngang, hay ngung hoat dong doc lap. Mot `identity_id` phai:
+Tiến trình service là nhất thời. Chúng được redeploy, đổi tên, scale ngang, hay ngừng hoạt động độc lập. Một `identity_id` phải:
 
-- **On dinh** trong toan bo vong doi du lieu no so huu
-- **Co the hash** thanh vi tri shard khong bao gio thay doi
+- **Ổn định** trong toàn bộ vòng đời dữ liệu nó sở hữu
+- **Có thể hash** thành vị trí shard không bao giờ thay đổi
 
-Service ID (vd `social-post-service-shard-0`) that bai o ca hai tieu chi. Application ID (`identity_id` KSUID 24 byte) dap ung ca hai.
+Service ID (vd `social-post-service-shard-0`) thất bại ở cả hai tiêu chí. Application ID (`identity_id` KSUID 24 byte) đáp ứng cả hai.
 
 ---
 
-## Quan he voi Agent Service
+## Quan hệ với Agent Service
 
-Agent Service quan ly BOT va AI_AGENT subject. Cac subject nay van dung JWT vi agent la dong (co the hang trieu con), khong phai luc nao cung o trong mTLS mesh (robot doc lap, bot ngoai), va can token ngan han vi muc dich an toan.
+Agent Service quản lý BOT và AI_AGENT subject. Các subject này vẫn dùng JWT vì agent là động (có thể hàng triệu con), không phải lúc nào cũng ở trong mTLS mesh (robot độc lập, bot ngoài), và cần token ngắn hạn vì mục đích an toàn.
 
-APPLICATION subject la nguoc lai: so luong it (hang chuc den hang tram), luon o trong mesh, dinh danh song lau - nen dinh danh bang cert la lua chon phu hop.
+APPLICATION subject là ngược lại: số lượng ít (hàng chục đến hàng trăm), luôn ở trong mesh, định danh sống lâu - nên định danh bằng cert là lựa chọn phù hợp.
